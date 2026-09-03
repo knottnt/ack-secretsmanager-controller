@@ -1,0 +1,1 @@
+	setDeleteSecretInput(r, input)

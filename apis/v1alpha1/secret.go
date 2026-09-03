@@ -56,6 +56,16 @@ type SecretSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Value is immutable once set"
 	// +kubebuilder:validation:Required
 	Name *string `json:"name"`
+	// The number of days from 7 to 30 that Secrets Manager waits before permanently
+	// deleting the secret. You can't use both this parameter and ForceDeleteWithoutRecovery
+	// in the same call. If you don't use either, then by default Secrets Manager
+	// uses a 30 day recovery window.
+	//
+	// This field is only used when deleting the secret. In addition to the
+	// 7-to-30 day range above, ACK accepts 0 to request immediate deletion
+	// without a recovery window (mapped to the DeleteSecret
+	// ForceDeleteWithoutRecovery parameter).
+	RecoveryWindowInDays *int64 `json:"recoveryWindowInDays,omitempty"`
 	// A list of Regions and KMS keys to replicate secrets.
 	ReplicaRegions []*ReplicaRegionType `json:"replicaRegions,omitempty"`
 	// The text data to encrypt and store in this new version of the secret. We

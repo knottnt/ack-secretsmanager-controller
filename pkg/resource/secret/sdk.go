@@ -440,6 +440,8 @@ func (rm *resourceManager) sdkDelete(
 	if err != nil {
 		return nil, err
 	}
+	setDeleteSecretInput(r, input)
+
 	var resp *svcsdk.DeleteSecretOutput
 	_ = resp
 	resp, err = rm.sdkapi.DeleteSecret(ctx, input)
@@ -454,6 +456,9 @@ func (rm *resourceManager) newDeleteRequestPayload(
 ) (*svcsdk.DeleteSecretInput, error) {
 	res := &svcsdk.DeleteSecretInput{}
 
+	if r.ko.Spec.RecoveryWindowInDays != nil {
+		res.RecoveryWindowInDays = r.ko.Spec.RecoveryWindowInDays
+	}
 	if r.ko.Status.ID != nil {
 		res.SecretId = r.ko.Status.ID
 	}

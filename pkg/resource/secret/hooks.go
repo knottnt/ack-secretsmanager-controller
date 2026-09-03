@@ -23,6 +23,10 @@ import (
 	"github.com/aws-controllers-k8s/secretsmanager-controller/pkg/resource/tags"
 )
 
+// forceDeleteRecoveryWindow is the Spec.RecoveryWindowInDays value that
+// requests deletion without any recovery window.
+const forceDeleteRecoveryWindow = 0
+
 // syncTags keeps the resource's tags in sync.
 func (rm *resourceManager) syncTags(
 	ctx context.Context,
@@ -37,6 +41,27 @@ func (rm *resourceManager) syncTags(
 		desired.ko.Spec.Tags,
 		latest.ko.Spec.Tags,
 	)
+}
+
+// setDeleteSecretInput completes the input for the DeleteSecret API call from
+// Spec.RecoveryWindowInDays.
+//
+// Secrets Manager has no zero day recovery window: immediate deletion is
+// requested through ForceDeleteWithoutRecovery instead, and the API rejects a
+// call that carries both parameters.
+//
+// Values outside the window Secrets Manager accepts are left for the API to
+// reject, so the controller does not drift from the service's bounds.
+func setDeleteSecretInput(r *resource, input *svcsdk.DeleteSecretInput) {
+	if r.ko.Spec.RecoveryWindowInDays == nil {
+		return
+	}
+
+	if *r.ko.Spec.RecoveryWindowInDays == forceDeleteRecoveryWindow {
+		forceDelete := true
+		input.ForceDeleteWithoutRecovery = &forceDelete
+		input.RecoveryWindowInDays = nil
+	}
 }
 
 func (rm *resourceManager) getSecretID(

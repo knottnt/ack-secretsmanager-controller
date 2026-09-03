@@ -27,8 +27,16 @@ from e2e.tests.helper import SecretsManagerValidator
 RESOURCE_KIND = "Secret"
 RESOURCE_PLURAL = "secrets"
 
+CREATE_WAIT_AFTER_SECONDS = 5
 DELETE_WAIT_AFTER_SECONDS = 5
 UPDATE_WAIT_AFTER_SECONDS = 5
+
+# Secrets Manager purges a force deleted secret in a background process with no
+# timing guarantee. Observed at roughly ten seconds, so this leaves headroom
+# while staying far below the 7 day minimum recovery window a windowed delete
+# would hold the secret for.
+FORCE_DELETE_PURGE_TIMEOUT_SECONDS = 60
+FORCE_DELETE_POLL_INTERVAL_SECONDS = 5
 
 
 @pytest.fixture(scope="module")
@@ -117,6 +125,73 @@ class TestSecret:
 
         expected_value = '{"env":"test"}'
         secretsmanager_validator.assert_secret_value(secret_name, expected_value)
+
+    def test_delete_without_recovery_window(self, secretsmanager_client, k8s_secret):
+        """A zero recovery window force deletes the secret, so Secrets Manager
+        schedules the purge immediately instead of holding it for 30 days.
+        """
+        secret = k8s_secret(
+            "default", random_suffix_name("no-recovery-str", 24),
+            "secret_str_key", '{"env":"test"}',
+        )
+        resource_name = random_suffix_name("no-recovery-secret", 24)
+
+        replacements = REPLACEMENT_VALUES.copy()
+        replacements["SECRET_NAME"] = resource_name
+        replacements["K8S_SECRET_NAMESPACE"] = secret.ns
+        replacements["K8S_SECRET_NAME"] = secret.name
+        replacements["K8S_SECRET_KEY"] = secret.key
+
+        resource_data = load_secretsmanager_resource(
+            "secret",
+            additional_replacements=replacements,
+        )
+        resource_data["spec"]["recoveryWindowInDays"] = 0
+
+        ref = k8s.CustomResourceReference(
+            CRD_GROUP, CRD_VERSION, RESOURCE_PLURAL,
+            resource_name, namespace="default",
+        )
+
+        k8s.create_custom_resource(ref, resource_data)
+        k8s.wait_resource_consumed_by_controller(ref)
+        time.sleep(CREATE_WAIT_AFTER_SECONDS)
+
+        cr = k8s.get_resource(ref)
+        assert cr is not None
+        assert 'arn' in cr['status']['ackResourceMetadata']
+
+        _, deleted = k8s.delete_custom_resource(
+            ref,
+            period_length=DELETE_WAIT_AFTER_SECONDS,
+        )
+        assert deleted
+
+        self._assert_deleted_without_recovery_window(
+            secretsmanager_client, resource_name,
+        )
+
+    def _assert_deleted_without_recovery_window(
+        self, secretsmanager_client, secret_name,
+    ):
+        # DescribeSecret reports DeletedDate as the time DeleteSecret was called,
+        # not the scheduled purge, so it reads the same for a windowed delete as
+        # for a forced one. Being purged outright is what distinguishes a force
+        # delete, so poll until the secret is gone: a windowed delete would keep
+        # it describable for at least the 7 day minimum window.
+        deadline = time.monotonic() + FORCE_DELETE_PURGE_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            try:
+                secretsmanager_client.describe_secret(SecretId=secret_name)
+            except secretsmanager_client.exceptions.ResourceNotFoundException:
+                return
+            time.sleep(FORCE_DELETE_POLL_INTERVAL_SECONDS)
+
+        pytest.fail(
+            f"secret {secret_name} still exists "
+            f"{FORCE_DELETE_PURGE_TIMEOUT_SECONDS}s after deletion, so a "
+            "recovery window may have been applied or the secret was not force deleted"
+        )
 
     @pytest.mark.parametrize(
         "simple_secret",
