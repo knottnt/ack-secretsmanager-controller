@@ -3,7 +3,7 @@ module github.com/aws-controllers-k8s/secretsmanager-controller
 go 1.25.0
 
 require (
-	github.com/aws-controllers-k8s/kms-controller v1.0.30
+	github.com/aws-controllers-k8s/kms-controller v1.5.0
 	github.com/aws-controllers-k8s/runtime v0.63.0
 	github.com/aws/aws-sdk-go-v2 v1.34.0
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.34.14
@@ -17,7 +17,6 @@ require (
 )
 
 require (
-	github.com/aws/aws-sdk-go v1.49.0 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.28.6 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.47 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.21 // indirect
